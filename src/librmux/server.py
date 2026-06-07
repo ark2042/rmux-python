@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, MutableMapping
 
 
+BINARY_CONTRACT_VERSION = 1
+
+
 JsonObject = dict[str, Any]
 
 
@@ -19,6 +22,10 @@ class RmuxCommandError(RuntimeError):
         message = run.stderr.strip() or f"rmux exited with status {run.returncode}"
         super().__init__(message)
         self.run = run
+
+
+class RmuxCompatibilityError(RuntimeError):
+    """Raised when the rmux binary does not match this wrapper contract."""
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,101 @@ class CommandRun:
         if self.returncode != 0:
             raise RmuxCommandError(self)
         return self
+
+
+@dataclass(frozen=True)
+class Session:
+    """A session target backed by a ``Server``."""
+
+    server: "Server"
+    name: str
+
+    def list_windows(self) -> list[JsonObject]:
+        """Return windows in this session."""
+
+        return self.server.list_windows(target=self.name)
+
+    def windows(self) -> list["Window"]:
+        """Return typed window handles for this session."""
+
+        return [
+            Window(self.server, self.name, int(window["window_index"]))
+            for window in self.list_windows()
+        ]
+
+    def window(self, index: int) -> "Window":
+        """Return a window handle by index."""
+
+        return Window(self.server, self.name, index)
+
+
+@dataclass(frozen=True)
+class Window:
+    """A window target backed by a ``Server``."""
+
+    server: "Server"
+    session_name: str
+    index: int
+
+    @property
+    def target(self) -> str:
+        """Return the tmux-compatible window target string."""
+
+        return f"{self.session_name}:{self.index}"
+
+    def list_panes(self) -> list[JsonObject]:
+        """Return panes in this window."""
+
+        return self.server.list_panes(target=self.target)
+
+    def panes(self) -> list["Pane"]:
+        """Return typed pane handles for this window."""
+
+        panes: list[Pane] = []
+        for pane in self.list_panes():
+            pane_id = pane.get("pane_id")
+            if isinstance(pane_id, str) and pane_id:
+                target = pane_id
+            else:
+                target = f"{self.target}.{int(pane['pane_index'])}"
+            panes.append(Pane(self.server, target))
+        return panes
+
+    def pane(self, index: int) -> "Pane":
+        """Return a pane handle by index."""
+
+        return Pane(self.server, f"{self.target}.{index}")
+
+
+@dataclass(frozen=True)
+class Pane:
+    """A pane target backed by a ``Server``."""
+
+    server: "Server"
+    target: str
+
+    def send_keys(self, *keys: object) -> CommandRun:
+        """Send key tokens or text to this pane."""
+
+        return self.server.send_keys(self.target, *keys)
+
+    def capture(
+        self,
+        *,
+        start: int | str | None = None,
+        end: int | str | None = None,
+        escape_ansi: bool = False,
+        join_wrapped: bool = False,
+    ) -> str:
+        """Return ``capture-pane -p`` text for this pane."""
+
+        return self.server.capture_pane(
+            target=self.target,
+            start=start,
+            end=end,
+            escape_ansi=escape_ansi,
+            join_wrapped=join_wrapped,
+        )
 
 
 class Server:
@@ -61,6 +163,7 @@ class Server:
         self.socket_name = socket_name
         self.env = None if env is None else dict(env)
         self.cwd = None if cwd is None else str(cwd)
+        self._capabilities: JsonObject | None = None
 
     def cmd(self, *args: object, check: bool = False) -> CommandRun:
         """Run an rmux command and return stdout, stderr, and exit status."""
@@ -87,19 +190,36 @@ class Server:
     def capabilities(self) -> JsonObject:
         """Return ``rmux capabilities --json``."""
 
-        value = self._json_object("capabilities", "--json")
-        return value
+        if self._capabilities is None:
+            self._capabilities = self._json_object("capabilities", "--json")
+            self._validate_capabilities(self._capabilities)
+        return dict(self._capabilities)
 
     def list_sessions(self) -> list[JsonObject]:
         """Return ``rmux list-sessions --json``."""
 
+        self._ensure_compatible()
         return self._json_list("list-sessions", "--json")
+
+    def sessions(self) -> list[Session]:
+        """Return typed session handles."""
+
+        return [
+            Session(self, str(session["session_name"]))
+            for session in self.list_sessions()
+        ]
+
+    def session(self, name: str) -> Session:
+        """Return a session handle by name."""
+
+        return Session(self, name)
 
     def list_windows(
         self, *, target: str | None = None, all_sessions: bool = False
     ) -> list[JsonObject]:
         """Return ``rmux list-windows --json``."""
 
+        self._ensure_compatible()
         args: list[object] = ["list-windows"]
         if all_sessions:
             args.append("-a")
@@ -113,6 +233,7 @@ class Server:
     ) -> list[JsonObject]:
         """Return ``rmux list-panes --json``."""
 
+        self._ensure_compatible()
         args: list[object] = ["list-panes"]
         if all_sessions:
             args.append("-a")
@@ -124,6 +245,7 @@ class Server:
     def list_clients(self, *, target_session: str | None = None) -> list[JsonObject]:
         """Return ``rmux list-clients --json``."""
 
+        self._ensure_compatible()
         args: list[object] = ["list-clients"]
         if target_session is not None:
             args.extend(["-t", target_session])
@@ -134,6 +256,18 @@ class Server:
         """Send key tokens or text to a pane target."""
 
         return self.cmd("send-keys", "-t", target, *keys, check=True)
+
+    def display_message(
+        self, message: str, *, target: str | None = None
+    ) -> JsonObject:
+        """Return ``display-message --json`` for one message or format."""
+
+        self._ensure_compatible()
+        args: list[object] = ["display-message", "--json", "-p"]
+        if target is not None:
+            args.extend(["-t", target])
+        args.append(message)
+        return self._json_object(*args)
 
     def capture_pane(
         self,
@@ -190,6 +324,21 @@ class Server:
             return json.loads(run.stdout)
         except json.JSONDecodeError as exc:
             raise ValueError(f"rmux returned invalid JSON: {exc}") from exc
+
+    def _ensure_compatible(self) -> None:
+        self.capabilities()
+
+    def _validate_capabilities(self, capabilities: JsonObject) -> None:
+        version = capabilities.get("binary_contract_version")
+        if version != BINARY_CONTRACT_VERSION:
+            raise RmuxCompatibilityError(
+                "unsupported rmux binary contract version "
+                f"{version!r}; expected {BINARY_CONTRACT_VERSION}"
+            )
+
+        commands = capabilities.get("json_commands")
+        if not isinstance(commands, list) or "list-sessions" not in commands:
+            raise RmuxCompatibilityError("rmux binary does not advertise JSON list commands")
 
     def _argv(self, args: Iterable[object]) -> list[str]:
         argv = [self.binary]

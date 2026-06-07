@@ -7,7 +7,7 @@ name = "librmux"
 version = "0.1.0"
 description = "Thin Python SDK for RMUX using the public rmux binary contract."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT OR Apache-2.0" }
 authors = [{ name = "RMUX contributors" }]
 keywords = ["terminal", "multiplexer", "rmux", "sdk"]

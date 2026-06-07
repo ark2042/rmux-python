@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from librmux import RmuxCommandError, Server
+from librmux import RmuxCommandError, RmuxCompatibilityError, Server
 
 
 class ServerTests(unittest.TestCase):
@@ -35,7 +35,7 @@ class ServerTests(unittest.TestCase):
         responses = {
             ("capabilities", "--json"): {
                 "binary_contract_version": 1,
-                "json_commands": ["list-sessions"],
+                "json_commands": ["list-sessions", "list-windows", "list-panes"],
             },
             ("list-sessions", "--json"): [{"session_name": "demo"}],
             ("list-windows", "-a", "--json"): [{"window_index": 0}],
@@ -50,6 +50,47 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(server.list_windows(all_sessions=True)[0]["window_index"], 0)
             self.assertEqual(server.list_panes(target="demo:0")[0]["pane_id"], "%1")
             self.assertEqual(server.list_clients(), [])
+
+    def test_rejects_incompatible_binary_contract(self) -> None:
+        responses = {
+            ("capabilities", "--json"): {
+                "binary_contract_version": 2,
+                "json_commands": ["list-sessions"],
+            },
+        }
+        with fake_rmux_json(responses) as binary:
+            server = Server(binary=binary)
+
+            with self.assertRaises(RmuxCompatibilityError):
+                server.list_sessions()
+
+    def test_object_model_uses_thin_cli_targets(self) -> None:
+        responses = {
+            ("capabilities", "--json"): {
+                "binary_contract_version": 1,
+                "json_commands": ["list-sessions", "list-windows", "list-panes"],
+            },
+            ("list-sessions", "--json"): [{"session_name": "demo"}],
+            ("list-windows", "-t", "demo", "--json"): [{"window_index": 0}],
+            ("list-panes", "-t", "demo:0", "--json"): [
+                {"pane_index": 0, "pane_id": "%4"}
+            ],
+            ("display-message", "--json", "-p", "-t", "%4", "#{pane_id}"): {
+                "message": "%4"
+            },
+        }
+        with fake_rmux_json(responses) as binary:
+            server = Server(binary=binary)
+
+            session = server.sessions()[0]
+            pane = session.windows()[0].panes()[0]
+
+            self.assertEqual(session.name, "demo")
+            self.assertEqual(pane.target, "%4")
+            self.assertEqual(
+                server.display_message("#{pane_id}", target=pane.target)["message"],
+                "%4",
+            )
 
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:

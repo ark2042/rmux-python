@@ -28,9 +28,11 @@ Server(socket_name="demo")        # passes -L demo
 ```python
 server.capabilities()
 server.list_sessions()
+server.sessions()
 server.list_windows(all_sessions=True)
 server.list_panes(target="demo:0")
 server.list_clients()
+server.display_message("#{session_name}", target="demo:0.0")
 server.send_keys("demo:0.0", "echo hello", "Enter")
 text = server.capture_pane(target="demo:0.0")
 ```
