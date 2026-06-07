@@ -21,6 +21,7 @@ and platform differences.
 Server()                         # default rmux endpoint
 Server(socket_path="/tmp/rmux")   # passes -S /tmp/rmux
 Server(socket_name="demo")        # passes -L demo
+Server(check_compatibility=False) # skip the binary contract guard
 ```
 
 ## Common Operations

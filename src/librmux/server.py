@@ -153,6 +153,7 @@ class Server:
         binary: str | Path = "rmux",
         socket_path: str | Path | None = None,
         socket_name: str | None = None,
+        check_compatibility: bool = True,
         env: Mapping[str, str] | None = None,
         cwd: str | Path | None = None,
     ) -> None:
@@ -161,6 +162,7 @@ class Server:
         self.binary = str(binary)
         self.socket_path = None if socket_path is None else str(socket_path)
         self.socket_name = socket_name
+        self.check_compatibility = check_compatibility
         self.env = None if env is None else dict(env)
         self.cwd = None if cwd is None else str(cwd)
         self._capabilities: JsonObject | None = None
@@ -192,7 +194,8 @@ class Server:
 
         if self._capabilities is None:
             self._capabilities = self._json_object("capabilities", "--json")
-            self._validate_capabilities(self._capabilities)
+            if self.check_compatibility:
+                self._validate_capabilities(self._capabilities)
         return dict(self._capabilities)
 
     def list_sessions(self) -> list[JsonObject]:
@@ -263,7 +266,7 @@ class Server:
         """Return ``display-message --json`` for one message or format."""
 
         self._ensure_compatible()
-        args: list[object] = ["display-message", "--json", "-p"]
+        args: list[object] = ["display-message", "--json"]
         if target is not None:
             args.extend(["-t", target])
         args.append(message)
@@ -326,7 +329,8 @@ class Server:
             raise ValueError(f"rmux returned invalid JSON: {exc}") from exc
 
     def _ensure_compatible(self) -> None:
-        self.capabilities()
+        if self.check_compatibility:
+            self.capabilities()
 
     def _validate_capabilities(self, capabilities: JsonObject) -> None:
         version = capabilities.get("binary_contract_version")

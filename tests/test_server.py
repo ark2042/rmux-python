@@ -64,6 +64,20 @@ class ServerTests(unittest.TestCase):
             with self.assertRaises(RmuxCompatibilityError):
                 server.list_sessions()
 
+    def test_can_skip_compatibility_check_for_alpha_targets(self) -> None:
+        responses = {
+            ("capabilities", "--json"): {
+                "binary_contract_version": 2,
+                "json_commands": [],
+            },
+            ("list-sessions", "--json"): [{"session_name": "demo"}],
+        }
+        with fake_rmux_json(responses) as binary:
+            server = Server(binary=binary, check_compatibility=False)
+
+            self.assertEqual(server.list_sessions()[0]["session_name"], "demo")
+            self.assertEqual(server.capabilities()["binary_contract_version"], 2)
+
     def test_object_model_uses_thin_cli_targets(self) -> None:
         responses = {
             ("capabilities", "--json"): {
@@ -75,7 +89,7 @@ class ServerTests(unittest.TestCase):
             ("list-panes", "-t", "demo:0", "--json"): [
                 {"pane_index": 0, "pane_id": "%4"}
             ],
-            ("display-message", "--json", "-p", "-t", "%4", "#{pane_id}"): {
+            ("display-message", "--json", "-t", "%4", "#{pane_id}"): {
                 "message": "%4"
             },
         }
