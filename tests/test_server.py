@@ -3,12 +3,30 @@ import os
 import stat
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
-from librmux import RmuxCommandError, RmuxCompatibilityError, Server
+from librmux import Pane, Rmux, RmuxCommandError, RmuxCompatibilityError, Server
 
 
 class ServerTests(unittest.TestCase):
+    def test_server_alias_points_to_canonical_rmux_client(self) -> None:
+        self.assertIs(Server, Rmux)
+
+    def test_builder_creates_configured_client(self) -> None:
+        with fake_rmux() as binary:
+            rmux = (
+                Rmux.builder()
+                .binary(binary)
+                .socket_name("demo")
+                .check_compatibility(False)
+                .connect_or_start()
+            )
+
+            run = rmux.cmd("list-panes")
+
+        self.assertEqual(run.stdout.splitlines()[:2], ["-L", "demo"])
+
     def test_cmd_injects_socket_path_and_preserves_exit(self) -> None:
         with fake_rmux() as binary:
             server = Server(binary=binary, socket_path="/tmp/rmux.sock")
@@ -78,7 +96,7 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(server.list_sessions()[0]["session_name"], "demo")
             self.assertEqual(server.capabilities()["binary_contract_version"], 2)
 
-    def test_object_model_uses_thin_cli_targets(self) -> None:
+    def test_object_model_uses_cli_targets(self) -> None:
         responses = {
             ("capabilities", "--json"): {
                 "binary_contract_version": 1,
@@ -105,6 +123,52 @@ class ServerTests(unittest.TestCase):
                 server.display_message("#{pane_id}", target=pane.target)["message"],
                 "%4",
             )
+
+    def test_session_returns_direct_pane_handle(self) -> None:
+        responses = {
+            ("capabilities", "--json"): {
+                "binary_contract_version": 1,
+                "json_commands": ["list-panes"],
+            },
+            ("list-panes", "-t", "demo:0", "--json"): [
+                {"pane_index": 0, "pane_id": "%4"}
+            ],
+        }
+        with fake_rmux_json(responses) as binary:
+            session = Rmux(binary=binary).session("demo")
+
+            pane = session.pane(0, 0)
+
+        self.assertEqual(pane.target, "demo:0.0")
+
+    def test_ensure_session_reuses_existing_session(self) -> None:
+        responses = {
+            ("has-session", "-t", "demo"): "",
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+
+            session = rmux.ensure_session("demo")
+
+        self.assertEqual(session.name, "demo")
+
+    def test_pane_text_helpers_use_literal_send_and_capture_polling(self) -> None:
+        responses = {
+            ("send-keys", "-t", "%4", "-l", "hello\n"): "",
+            ("capture-pane", "-p", "-t", "%4"): "noise Ready\n",
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+            pane = Pane(rmux, "%4")
+
+            run = pane.send_text("hello\n")
+            match = pane.expect_visible_text().to_contain("Ready").timeout(
+                timedelta(seconds=0.1)
+            )
+
+        self.assertEqual(run.returncode, 0)
+        self.assertEqual(match.row, 0)
+        self.assertEqual(match.column, 6)
 
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:
@@ -157,7 +221,11 @@ class fake_rmux_json:
             "if key not in data:\n"
             "    print('missing fake response for ' + repr(sys.argv[1:]), file=sys.stderr)\n"
             "    sys.exit(2)\n"
-            "print(json.dumps(data[key]))\n",
+            "value = data[key]\n"
+            "if isinstance(value, str):\n"
+            "    print(value, end='')\n"
+            "else:\n"
+            "    print(json.dumps(value))\n",
             encoding="utf-8",
         )
         path.chmod(path.stat().st_mode | stat.S_IXUSR)

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "librmux"
 version = "0.1.0"
-description = "Thin Python SDK for RMUX using the public rmux binary contract."
+description = "Python SDK for RMUX."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT OR Apache-2.0" }

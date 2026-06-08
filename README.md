@@ -1,47 +1,41 @@
 # librmux
 
-`librmux` is a thin Python SDK for RMUX. It uses the public `rmux` binary
-contract: one-shot commands with `--json` and live control mode with `rmux -C`.
+`librmux` is the Python SDK for RMUX. Its public handles follow the same
+vocabulary as the Rust SDK: `Rmux`, `Session`, `Window`, and `Pane`.
 
 ```python
-from librmux import Server
+from librmux import Rmux
 
-server = Server()
-for session in server.list_sessions():
+rmux = Rmux()
+for session in rmux.list_sessions():
     print(session["session_name"])
 ```
 
-The wrapper does not use Rust FFI and does not speak the internal RMUX IPC
-socket directly. The `rmux` binary owns endpoint resolution, daemon semantics,
-and platform differences.
+`Server` remains available as an alias for existing code.
 
 ## Endpoint Selection
 
 ```python
-Server()                         # default rmux endpoint
-Server(socket_path="/tmp/rmux")   # passes -S /tmp/rmux
-Server(socket_name="demo")        # passes -L demo
-Server(check_compatibility=False) # skip the binary contract guard
+Rmux()                         # default rmux endpoint
+Rmux(socket_path="/tmp/rmux")   # passes -S /tmp/rmux
+Rmux(socket_name="demo")        # passes -L demo
+Rmux.builder().socket_name("demo").connect_or_start()
 ```
 
 ## Common Operations
 
 ```python
-server.capabilities()
-server.list_sessions()
-server.sessions()
-server.list_windows(all_sessions=True)
-server.list_panes(target="demo:0")
-server.list_clients()
-server.display_message("#{session_name}", target="demo:0.0")
-server.send_keys("demo:0.0", "echo hello", "Enter")
-text = server.capture_pane(target="demo:0.0")
+session = rmux.ensure_session("demo")
+pane = session.pane(0, 0)
+pane.send_text("echo hello\n")
+pane.expect_visible_text().to_contain("hello").timeout(5)
+text = pane.capture_text()
 ```
 
-For commands not yet modeled:
+For raw commands:
 
 ```python
-run = server.cmd("rename-window", "-t", "demo:0", "logs")
+run = rmux.cmd("rename-window", "-t", "demo:0", "logs")
 if run.returncode != 0:
     raise RuntimeError(run.stderr)
 ```
