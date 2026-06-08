@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -217,7 +218,11 @@ class Pane:
             captured = self.capture_text()
             if exact:
                 if captured.rstrip("\n") == text:
-                    return TextMatch(text=text, row=0, column=0)
+                    index = captured.find(text)
+                    if index < 0:
+                        index = 0
+                    row, column = row_column(captured, index)
+                    return TextMatch(text=text, row=row, column=column)
             else:
                 index = captured.find(text)
                 if index >= 0:
@@ -476,7 +481,9 @@ class Rmux:
     def _merged_env(self) -> MutableMapping[str, str] | None:
         if self.env is None:
             return None
-        return dict(self.env)
+        env = dict(os.environ)
+        env.update(self.env)
+        return env
 
 
 class RmuxBuilder:
@@ -529,9 +536,9 @@ class RmuxBuilder:
         return self
 
     def connect_or_start(self) -> Rmux:
-        """Build an ``Rmux`` client."""
+        """Build a client and validate the rmux contract when enabled."""
 
-        return Rmux(
+        rmux = Rmux(
             binary=self._binary,
             socket_path=self._socket_path,
             socket_name=self._socket_name,
@@ -539,6 +546,9 @@ class RmuxBuilder:
             env=self._env,
             cwd=self._cwd,
         )
+        if self._check_compatibility:
+            rmux.capabilities()
+        return rmux
 
 
 Server = Rmux

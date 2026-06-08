@@ -27,6 +27,20 @@ class ServerTests(unittest.TestCase):
 
         self.assertEqual(run.stdout.splitlines()[:2], ["-L", "demo"])
 
+    def test_connect_or_start_validates_contract_when_enabled(self) -> None:
+        responses = {
+            ("capabilities", "--json"): {
+                "binary_contract_version": 1,
+                "json_commands": ["list-sessions"],
+            },
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux.builder().binary(binary).connect_or_start()
+
+            capabilities = rmux.capabilities()
+
+        self.assertEqual(capabilities["binary_contract_version"], 1)
+
     def test_cmd_injects_socket_path_and_preserves_exit(self) -> None:
         with fake_rmux() as binary:
             server = Server(binary=binary, socket_path="/tmp/rmux.sock")
@@ -39,6 +53,15 @@ class ServerTests(unittest.TestCase):
             run.stdout.splitlines(),
             ["-S", "/tmp/rmux.sock", "list-sessions", "--json"],
         )
+
+    def test_custom_env_is_merged_with_process_environment(self) -> None:
+        with fake_rmux_env() as binary:
+            server = Server(binary=binary, env={"FOO": "bar"})
+
+            run = server.cmd("env-check")
+
+        self.assertIn("FOO=bar\n", run.stdout)
+        self.assertRegex(run.stdout, r"PATH=.+")
 
     def test_checked_command_raises_with_run_attached(self) -> None:
         with fake_rmux() as binary:
@@ -170,6 +193,31 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(match.row, 0)
         self.assertEqual(match.column, 6)
 
+    def test_pane_text_helpers_work_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session("py_sdk_smoke", shell_command="cat")
+                pane = session.pane(0, 0)
+
+                pane.send_text("hello-sdk\n")
+                match = pane.expect_visible_text().to_contain("hello-sdk").timeout(3)
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertEqual(match.text, "hello-sdk")
+        self.assertEqual(match.row, 0)
+        self.assertEqual(match.column, 0)
+
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:
             server = Server(binary=binary, socket_name="demo")
@@ -192,6 +240,25 @@ class fake_rmux:
             "for arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"
             "printf 'fake stderr\\n' >&2\n"
             "exit 3\n",
+            encoding="utf-8",
+        )
+        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+        self.path = path
+        return str(path)
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.root.cleanup()
+
+
+class fake_rmux_env:
+    def __enter__(self) -> str:
+        self.root = tempfile.TemporaryDirectory()
+        path = Path(self.root.name) / "rmux-env"
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os\n"
+            "print('PATH=' + os.environ.get('PATH', ''))\n"
+            "print('FOO=' + os.environ.get('FOO', ''))\n",
             encoding="utf-8",
         )
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
@@ -240,6 +307,17 @@ class fake_rmux_json:
         else:
             os.environ["RMUX_FAKE_RESPONSES"] = self.previous
         self.root.cleanup()
+
+
+def real_rmux_binary() -> str | None:
+    configured = os.environ.get("RMUX_TEST_BINARY")
+    if configured:
+        path = Path(configured)
+        return str(path) if path.exists() else None
+
+    repo_root = Path(__file__).resolve().parents[2]
+    path = repo_root / "rmux" / "target" / "debug" / "rmux"
+    return str(path) if path.exists() else None
 
 
 if __name__ == "__main__":
