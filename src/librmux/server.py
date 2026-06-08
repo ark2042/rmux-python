@@ -299,6 +299,7 @@ class Server:
     def control_mode(self) -> subprocess.Popen[str]:
         """Open ``rmux -C`` and return the live subprocess."""
 
+        self._ensure_compatible()
         return subprocess.Popen(
             self._argv(["-C"]),
             cwd=self.cwd,
