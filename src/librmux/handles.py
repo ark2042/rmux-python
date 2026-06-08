@@ -52,6 +52,38 @@ class Session:
 
         return self.window(window_index).pane(pane_index)
 
+    def rename(self, name: str) -> "Session":
+        """Rename this session and return the renamed handle."""
+
+        self.server.cmd("rename-session", "-t", self.name, name, check=True)
+        return Session(self.server, name)
+
+    def kill(self) -> "CommandRun":
+        """Kill this session."""
+
+        return self.server.cmd("kill-session", "-t", self.name, check=True)
+
+    def new_window(
+        self,
+        *,
+        name: str | None = None,
+        detached: bool = True,
+        shell_command: str | None = None,
+    ) -> "Window":
+        """Create a new window in this session."""
+
+        args: list[object] = ["new-window", "-P", "-F", "#{window_index}", "-t", self.name]
+        if detached:
+            args.append("-d")
+        if name is not None:
+            args.extend(["-n", name])
+        if shell_command is not None:
+            args.append(shell_command)
+        run = self.server.cmd(*args, check=True)
+        index_text = run.stdout.strip()
+        index = int(index_text) if index_text else 0
+        return Window(self.server, self.name, index)
+
 
 @dataclass(frozen=True)
 class Window:
@@ -90,6 +122,41 @@ class Window:
 
         return Pane(self.server, f"{self.target}.{index}")
 
+    def select(self) -> "CommandRun":
+        """Select this window."""
+
+        return self.server.cmd("select-window", "-t", self.target, check=True)
+
+    def rename(self, name: str) -> "CommandRun":
+        """Rename this window."""
+
+        return self.server.cmd("rename-window", "-t", self.target, name, check=True)
+
+    def resize(
+        self,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> "CommandRun":
+        """Resize this window."""
+
+        args: list[object] = ["resize-window", "-t", self.target]
+        if width is not None:
+            args.extend(["-x", width])
+        if height is not None:
+            args.extend(["-y", height])
+        return self.server.cmd(*args, check=True)
+
+    def select_layout(self, layout: str) -> "CommandRun":
+        """Apply a layout to this window."""
+
+        return self.server.cmd("select-layout", "-t", self.target, layout, check=True)
+
+    def close(self) -> "CommandRun":
+        """Kill this window."""
+
+        return self.server.cmd("kill-window", "-t", self.target, check=True)
+
 
 @dataclass(frozen=True)
 class Pane:
@@ -107,6 +174,70 @@ class Pane:
         """Send literal text to this pane."""
 
         return self.server.send_text(self.target, text)
+
+    def select(self) -> "CommandRun":
+        """Select this pane."""
+
+        return self.server.cmd("select-pane", "-t", self.target, check=True)
+
+    def resize(
+        self,
+        *,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> "CommandRun":
+        """Resize this pane."""
+
+        args: list[object] = ["resize-pane", "-t", self.target]
+        if width is not None:
+            args.extend(["-x", width])
+        if height is not None:
+            args.extend(["-y", height])
+        return self.server.cmd(*args, check=True)
+
+    def split(
+        self,
+        *,
+        direction: str = "vertical",
+        size: int | str | None = None,
+        shell_command: str | None = None,
+    ) -> "Pane":
+        """Split this pane and return the new pane handle."""
+
+        args: list[object] = ["split-window", "-P", "-F", "#{pane_id}", "-t", self.target]
+        if direction in {"horizontal", "h"}:
+            args.append("-h")
+        elif direction in {"vertical", "v"}:
+            args.append("-v")
+        else:
+            raise ValueError("direction must be 'horizontal' or 'vertical'")
+        if size is not None:
+            args.extend(["-l", size])
+        if shell_command is not None:
+            args.append(shell_command)
+        run = self.server.cmd(*args, check=True)
+        target = run.stdout.strip()
+        return Pane(self.server, target or self.target)
+
+    def respawn(
+        self,
+        shell_command: str | None = None,
+        *,
+        kill: bool = False,
+    ) -> "CommandRun":
+        """Respawn this pane."""
+
+        args: list[object] = ["respawn-pane", "-t", self.target]
+        if kill:
+            args.append("-k")
+        if shell_command is not None:
+            args.append(shell_command)
+        return self.server.cmd(*args, check=True)
+
+    def close(self) -> "CommandRun":
+        """Kill this pane."""
+
+        return self.server.cmd("kill-pane", "-t", self.target, check=True)
 
     def capture(
         self,

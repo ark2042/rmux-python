@@ -301,6 +301,42 @@ class ServerTests(unittest.TestCase):
 
         self.assertIn("render-sdk", snapshot.visible_text)
 
+    def test_mutating_handles_work_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session("py_sdk_mutate", shell_command="cat")
+                renamed = session.rename("py_sdk_mutate_renamed")
+                window = renamed.window(0)
+
+                window.rename("main")
+                split = window.pane(0).split(direction="horizontal", shell_command="cat")
+                split.select()
+                split.resize(width=20)
+                split.send_text("mutate-sdk\n")
+                split.expect_visible_text().to_contain("mutate-sdk").timeout(3)
+                window.select_layout("even-horizontal")
+                extra = renamed.new_window(name="extra", shell_command="cat")
+                extra.rename("logs")
+
+                windows = renamed.list_windows()
+                panes = window.list_panes()
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertTrue(any(window["window_name"] == "main" for window in windows))
+        self.assertTrue(any(window["window_name"] == "logs" for window in windows))
+        self.assertGreaterEqual(len(panes), 2)
+
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:
             server = Server(binary=binary, socket_name="demo")
