@@ -17,8 +17,11 @@ from .expectations import (
     duration_seconds,
     row_column,
 )
+from .control import ControlModeClient
+from .lifecycle import PaneExitState
 from .locators import TextLocator
 from .snapshots import PaneSnapshot
+from .streams import PaneLineStream, PaneOutputStream, PaneRenderStream
 
 
 BINARY_CONTRACT_VERSION = 1
@@ -207,6 +210,67 @@ class Pane:
 
         return self.get_by_text(text)
 
+    def id(self) -> str | None:
+        """Return the current pane id, when listed."""
+
+        panes = self.server.list_panes(target=self.target)
+        if not panes:
+            return None
+        pane_id = panes[0].get("pane_id")
+        return str(pane_id) if pane_id else None
+
+    def output_stream(self) -> PaneOutputStream:
+        """Open a raw output stream for this pane."""
+
+        return PaneOutputStream(self)
+
+    def line_stream(self) -> PaneLineStream:
+        """Open a decoded line stream for this pane."""
+
+        return PaneLineStream(self.output_stream())
+
+    def render_stream(self) -> PaneRenderStream:
+        """Open a snapshot stream triggered by pane output."""
+
+        return PaneRenderStream(self)
+
+    def wait_for_exit(
+        self,
+        *,
+        timeout: Duration = 5.0,
+        interval: Duration = 0.05,
+    ) -> PaneExitState:
+        """Wait until this pane is marked dead."""
+
+        timeout_seconds = duration_seconds(timeout)
+        interval_seconds = duration_seconds(interval)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            state = self._exit_state()
+            if state.dead:
+                return state
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"pane did not exit before timeout: {self.target}")
+            time.sleep(interval_seconds)
+
+    def _exit_state(self) -> PaneExitState:
+        run = self.server.cmd(
+            "display-message",
+            "-p",
+            "-t",
+            self.target,
+            "#{pane_dead}:#{pane_dead_status}",
+        )
+        if run.returncode != 0:
+            return PaneExitState(dead=True, status=None)
+        dead, _, status = run.stdout.strip().partition(":")
+        if dead not in {"1", "true"}:
+            return PaneExitState(dead=False, status=None)
+        try:
+            return PaneExitState(dead=True, status=int(status))
+        except ValueError:
+            return PaneExitState(dead=True, status=None)
+
     def wait_for_text(
         self,
         text: str,
@@ -272,8 +336,10 @@ class Rmux:
     """
 
     @classmethod
-    def builder(cls) -> "RmuxBuilder":
+    def builder(cls):
         """Return a builder for this client."""
+
+        from .builder import RmuxBuilder
 
         return RmuxBuilder()
 
@@ -465,6 +531,11 @@ class Rmux:
             text=True,
         )
 
+    def control(self) -> ControlModeClient:
+        """Open a parsed control-mode client."""
+
+        return ControlModeClient(self.control_mode())
+
     def _json_list(self, *args: object) -> list[JsonObject]:
         value = self._json_value(*args)
         if not isinstance(value, list):
@@ -515,71 +586,6 @@ class Rmux:
         env = dict(os.environ)
         env.update(self.env)
         return env
-
-
-class RmuxBuilder:
-    """Builder for ``Rmux`` clients."""
-
-    def __init__(self) -> None:
-        self._binary: str | Path = "rmux"
-        self._socket_path: str | Path | None = None
-        self._socket_name: str | None = None
-        self._check_compatibility = True
-        self._env: Mapping[str, str] | None = None
-        self._cwd: str | Path | None = None
-
-    def binary(self, value: str | Path) -> "RmuxBuilder":
-        """Use a specific rmux binary."""
-
-        self._binary = value
-        return self
-
-    def socket_path(self, value: str | Path) -> "RmuxBuilder":
-        """Use a specific socket path."""
-
-        self._socket_path = value
-        self._socket_name = None
-        return self
-
-    def socket_name(self, value: str) -> "RmuxBuilder":
-        """Use a named socket."""
-
-        self._socket_name = value
-        self._socket_path = None
-        return self
-
-    def check_compatibility(self, enabled: bool) -> "RmuxBuilder":
-        """Enable or disable the binary contract guard."""
-
-        self._check_compatibility = enabled
-        return self
-
-    def env(self, value: Mapping[str, str] | None) -> "RmuxBuilder":
-        """Set the environment used for rmux commands."""
-
-        self._env = None if value is None else dict(value)
-        return self
-
-    def cwd(self, value: str | Path | None) -> "RmuxBuilder":
-        """Set the working directory used for rmux commands."""
-
-        self._cwd = value
-        return self
-
-    def connect_or_start(self) -> Rmux:
-        """Build a client and validate the rmux contract when enabled."""
-
-        rmux = Rmux(
-            binary=self._binary,
-            socket_path=self._socket_path,
-            socket_name=self._socket_name,
-            check_compatibility=self._check_compatibility,
-            env=self._env,
-            cwd=self._cwd,
-        )
-        if self._check_compatibility:
-            rmux.capabilities()
-        return rmux
 
 
 Server = Rmux

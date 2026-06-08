@@ -1,10 +1,10 @@
 """Python SDK for RMUX."""
 
+from .builder import RmuxBuilder
 from .server import (
     CommandRun,
     Pane,
     Rmux,
-    RmuxBuilder,
     RmuxCommandError,
     RmuxCompatibilityError,
     Server,
@@ -12,13 +12,34 @@ from .server import (
     Window,
 )
 from .expectations import TextExpectation, TextMatch
+from .control import (
+    ControlEvent,
+    ControlExit,
+    ControlExtendedOutput,
+    ControlModeClient,
+    ControlNotification,
+    ControlOutput,
+)
+from .lifecycle import PaneExitState
 from .locators import LocatorExpectation, TextLocator
 from .snapshots import PaneSnapshot
+from .streams import PaneLineStream, PaneOutputChunk, PaneOutputStream, PaneRenderStream
 
 __all__ = [
     "CommandRun",
+    "ControlEvent",
+    "ControlExit",
+    "ControlExtendedOutput",
+    "ControlModeClient",
+    "ControlNotification",
+    "ControlOutput",
     "LocatorExpectation",
     "Pane",
+    "PaneExitState",
+    "PaneLineStream",
+    "PaneOutputChunk",
+    "PaneOutputStream",
+    "PaneRenderStream",
     "PaneSnapshot",
     "Rmux",
     "RmuxBuilder",

@@ -6,7 +6,15 @@ import unittest
 from datetime import timedelta
 from pathlib import Path
 
-from librmux import Pane, Rmux, RmuxCommandError, RmuxCompatibilityError, Server
+from librmux import (
+    ControlOutput,
+    Pane,
+    Rmux,
+    RmuxCommandError,
+    RmuxCompatibilityError,
+    Server,
+)
+from librmux.control import decode_tmux_octal, parse_control_line
 
 
 class ServerTests(unittest.TestCase):
@@ -193,6 +201,15 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(match.row, 0)
         self.assertEqual(match.column, 6)
 
+    def test_control_output_parser_decodes_tmux_octal_bytes(self) -> None:
+        event = parse_control_line(r"%output %4 hello\012\134\377")
+
+        self.assertIsInstance(event, ControlOutput)
+        assert isinstance(event, ControlOutput)
+        self.assertEqual(event.pane_id, "%4")
+        self.assertEqual(event.data, b"hello\n\\\xff")
+        self.assertEqual(decode_tmux_octal(r"a\000b"), b"a\0b")
+
     def test_snapshot_and_text_locator_helpers(self) -> None:
         responses = {
             ("capture-pane", "-p", "-t", "%4"): "alpha Ready\nbeta Ready\n",
@@ -254,6 +271,35 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(located.text, "hello-sdk")
         self.assertEqual(count, 2)
         self.assertIn("hello-sdk", snapshot.visible_text)
+
+    def test_pane_streams_work_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session("py_sdk_stream", shell_command="cat")
+                pane = session.pane(0, 0)
+                self.assertRegex(pane.id() or "", r"^%[0-9]+$")
+
+                with pane.line_stream() as lines:
+                    pane.send_text("stream-sdk\n")
+                    self.assertEqual(lines.next(timeout=3), "stream-sdk")
+
+                with pane.render_stream() as renders:
+                    pane.send_text("render-sdk\n")
+                    snapshot = renders.next(timeout=3)
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertIn("render-sdk", snapshot.visible_text)
 
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:
