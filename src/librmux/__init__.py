@@ -1,15 +1,13 @@
 """Python SDK for RMUX."""
 
 from .builder import RmuxBuilder
+from .handles import Pane, Session, Window
 from .server import (
     CommandRun,
-    Pane,
     Rmux,
     RmuxCommandError,
     RmuxCompatibilityError,
     Server,
-    Session,
-    Window,
 )
 from .expectations import TextExpectation, TextMatch
 from .control import (
