@@ -302,6 +302,30 @@ class ServerTests(unittest.TestCase):
 
         self.assertIn("render-sdk", snapshot.visible_text)
 
+    def test_wait_for_exit_works_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session(
+                    "py_sdk_exit",
+                    shell_command='sh -c "exit 7"',
+                )
+                state = session.pane(0, 0).wait_for_exit(timeout=3)
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertTrue(state.dead)
+        self.assertEqual(state.status, 7)
+
     def test_mutating_handles_work_against_real_rmux(self) -> None:
         binary = real_rmux_binary()
         if binary is None:
