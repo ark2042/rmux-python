@@ -9,6 +9,7 @@ from pathlib import Path
 from librmux import (
     ControlOutput,
     Pane,
+    PaneSet,
     Rmux,
     RmuxCommandError,
     RmuxCompatibilityError,
@@ -336,6 +337,76 @@ class ServerTests(unittest.TestCase):
         self.assertTrue(any(window["window_name"] == "main" for window in windows))
         self.assertTrue(any(window["window_name"] == "logs" for window in windows))
         self.assertGreaterEqual(len(panes), 2)
+
+    def test_paneset_and_tracing_work_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session("py_sdk_paneset", shell_command="cat")
+                left = session.pane(0, 0)
+                right = left.split(direction="horizontal", shell_command="cat")
+                panes = PaneSet([left, right])
+
+                panes.broadcast_text("paneset-sdk\n")
+                outcome = panes.expect_all().visible_text_contains("paneset-sdk").timeout(
+                    3
+                )
+                snapshots = panes.snapshot_all()
+                trace = rmux.tracing().max_events(10).start()
+                trace.record_action("broadcast paneset-sdk")
+                trace.record_snapshot(left)
+                trace_path = trace.stop(Path(root) / "trace")
+            finally:
+                rmux.cmd("kill-server")
+
+            trace_lines = [
+                json.loads(line)
+                for line in trace_path.read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(len(outcome.matched), 2)
+        self.assertEqual(len(snapshots), 2)
+        self.assertTrue(all("paneset-sdk" in s.visible_text for s in snapshots))
+        self.assertEqual(
+            [event["kind"] for event in trace_lines],
+            ["trace.start", "action", "snapshot", "trace.stop"],
+        )
+
+    def test_public_api_inventory_keeps_core_vocabulary_available(self) -> None:
+        expected = {
+            Rmux: [
+                "builder",
+                "cmd",
+                "ensure_session",
+                "pane_set",
+                "broadcast_text",
+                "tracing",
+            ],
+            Pane: [
+                "snapshot",
+                "get_by_text",
+                "output_stream",
+                "line_stream",
+                "render_stream",
+                "split",
+                "resize",
+                "wait_for_exit",
+            ],
+            PaneSet: ["broadcast_text", "snapshot_all", "expect_all", "expect_any"],
+        }
+
+        for cls, names in expected.items():
+            for name in names:
+                self.assertTrue(hasattr(cls, name), f"{cls.__name__}.{name} missing")
 
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:

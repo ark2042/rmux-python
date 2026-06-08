@@ -20,8 +20,10 @@ from .control import (
 )
 from .lifecycle import PaneExitState
 from .locators import LocatorExpectation, TextLocator
+from .pane_set import PaneSet, PaneSetExpectation, PaneSetOutcome
 from .snapshots import PaneSnapshot
 from .streams import PaneLineStream, PaneOutputChunk, PaneOutputStream, PaneRenderStream
+from .trace import RmuxTraceBuilder, TraceSession
 
 __all__ = [
     "CommandRun",
@@ -38,6 +40,9 @@ __all__ = [
     "PaneOutputChunk",
     "PaneOutputStream",
     "PaneRenderStream",
+    "PaneSet",
+    "PaneSetExpectation",
+    "PaneSetOutcome",
     "PaneSnapshot",
     "Rmux",
     "RmuxBuilder",
@@ -48,5 +53,7 @@ __all__ = [
     "TextExpectation",
     "TextLocator",
     "TextMatch",
+    "RmuxTraceBuilder",
+    "TraceSession",
     "Window",
 ]

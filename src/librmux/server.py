@@ -257,6 +257,30 @@ class Rmux:
 
         return ControlModeClient(self.control_mode())
 
+    def pane_set(self, panes):
+        """Create an ordered pane set."""
+
+        from .pane_set import PaneSet
+
+        return PaneSet(panes)
+
+    def broadcast_text(self, panes, text: str):
+        """Send literal text to every pane."""
+
+        return self.pane_set(panes).broadcast_text(text)
+
+    def broadcast_key(self, panes, key: str):
+        """Send one key token to every pane."""
+
+        return self.pane_set(panes).broadcast_key(key)
+
+    def tracing(self):
+        """Start building an in-memory trace session."""
+
+        from .trace import RmuxTraceBuilder
+
+        return RmuxTraceBuilder()
+
     def _json_list(self, *args: object) -> list[JsonObject]:
         value = self._json_value(*args)
         if not isinstance(value, list):
