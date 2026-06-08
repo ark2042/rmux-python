@@ -17,6 +17,8 @@ from .expectations import (
     duration_seconds,
     row_column,
 )
+from .locators import TextLocator
+from .snapshots import PaneSnapshot
 
 
 BINARY_CONTRACT_VERSION = 1
@@ -169,12 +171,41 @@ class Pane:
     ) -> str:
         """Return visible text captured from this pane."""
 
-        return self.capture(
+        return self.snapshot(
             start=start,
             end=end,
             escape_ansi=escape_ansi,
             join_wrapped=join_wrapped,
+        ).visible_text
+
+    def snapshot(
+        self,
+        *,
+        start: int | str | None = None,
+        end: int | str | None = None,
+        escape_ansi: bool = False,
+        join_wrapped: bool = False,
+    ) -> PaneSnapshot:
+        """Return a typed snapshot of visible pane text."""
+
+        return PaneSnapshot(
+            self.capture(
+                start=start,
+                end=end,
+                escape_ansi=escape_ansi,
+                join_wrapped=join_wrapped,
+            )
         )
+
+    def get_by_text(self, text: str) -> TextLocator:
+        """Return a locator for visible pane text."""
+
+        return TextLocator(self, text)
+
+    def locator(self, text: str) -> TextLocator:
+        """Return a text locator for this pane."""
+
+        return self.get_by_text(text)
 
     def wait_for_text(
         self,

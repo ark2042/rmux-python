@@ -193,6 +193,33 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(match.row, 0)
         self.assertEqual(match.column, 6)
 
+    def test_snapshot_and_text_locator_helpers(self) -> None:
+        responses = {
+            ("capture-pane", "-p", "-t", "%4"): "alpha Ready\nbeta Ready\n",
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+            pane = Pane(rmux, "%4")
+
+            snapshot = pane.snapshot()
+            first = pane.get_by_text("Ready").first().expect().to_be_visible().timeout(
+                timedelta(seconds=0.1)
+            )
+            last = pane.locator("Ready").last().expect().to_have_text("Ready").timeout(
+                timedelta(seconds=0.1)
+            )
+            count = pane.get_by_text("Ready").expect().to_have_count(2).timeout(
+                timedelta(seconds=0.1)
+            )
+
+        self.assertEqual(snapshot.visible_text, "alpha Ready\nbeta Ready\n")
+        self.assertEqual(snapshot.lines, ("alpha Ready", "beta Ready"))
+        self.assertEqual(snapshot.row_text(1), "beta Ready")
+        self.assertEqual(len(snapshot.find_all_text("Ready")), 2)
+        self.assertEqual((first.row, first.column), (0, 6))
+        self.assertEqual((last.row, last.column), (1, 5))
+        self.assertEqual(count, 2)
+
     def test_pane_text_helpers_work_against_real_rmux(self) -> None:
         binary = real_rmux_binary()
         if binary is None:
@@ -211,12 +238,22 @@ class ServerTests(unittest.TestCase):
 
                 pane.send_text("hello-sdk\n")
                 match = pane.expect_visible_text().to_contain("hello-sdk").timeout(3)
+                located = pane.get_by_text("hello-sdk").expect().to_be_visible().timeout(
+                    3
+                )
+                count = pane.get_by_text("hello-sdk").expect().to_have_count(2).timeout(
+                    3
+                )
+                snapshot = pane.snapshot()
             finally:
                 rmux.cmd("kill-server")
 
         self.assertEqual(match.text, "hello-sdk")
         self.assertEqual(match.row, 0)
         self.assertEqual(match.column, 0)
+        self.assertEqual(located.text, "hello-sdk")
+        self.assertEqual(count, 2)
+        self.assertIn("hello-sdk", snapshot.visible_text)
 
     def test_endpoint_selector_accepts_socket_name(self) -> None:
         with fake_rmux() as binary:

@@ -12,10 +12,14 @@ from .server import (
     Window,
 )
 from .expectations import TextExpectation, TextMatch
+from .locators import LocatorExpectation, TextLocator
+from .snapshots import PaneSnapshot
 
 __all__ = [
     "CommandRun",
+    "LocatorExpectation",
     "Pane",
+    "PaneSnapshot",
     "Rmux",
     "RmuxBuilder",
     "RmuxCommandError",
@@ -23,6 +27,7 @@ __all__ = [
     "Server",
     "Session",
     "TextExpectation",
+    "TextLocator",
     "TextMatch",
     "Window",
 ]
