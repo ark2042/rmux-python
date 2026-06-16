@@ -133,6 +133,17 @@ class ControlModeClient:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=2)
+        if self.process.stdout is not None:
+            try:
+                self.process.stdout.close()
+            except OSError:
+                pass
+        if self.process.stderr is not None:
+            try:
+                self.process.stderr.close()
+            except OSError:
+                pass
+        self._reader.join(timeout=2)
 
     def _read_stdout(self) -> None:
         assert self.process.stdout is not None
@@ -146,19 +157,37 @@ class ControlModeClient:
 def parse_control_line(line: str) -> ControlEvent | None:
     if not line.startswith("%"):
         return None
-    parts = line.split(" ", 3)
-    prefix = parts[0]
-    if prefix == "%output" and len(parts) >= 3:
-        return ControlOutput(parts[1], decode_tmux_octal(parts[2]))
-    if prefix == "%extended-output" and len(parts) >= 4:
-        payload = parts[3]
+    if line.startswith("%output "):
+        pane_id, payload = _split_payload(line[len("%output ") :])
+        if pane_id is None:
+            return ControlNotification("%output", line)
+        return ControlOutput(pane_id, decode_tmux_octal(payload))
+    if line.startswith("%extended-output "):
+        pane_id, rest = _split_payload(line[len("%extended-output ") :])
+        if pane_id is None:
+            return ControlNotification("%extended-output", line)
+        age, payload = _split_payload(rest)
+        if age is None:
+            return ControlNotification("%extended-output", line)
         if payload.startswith(": "):
             payload = payload[2:]
-        return ControlExtendedOutput(parts[1], int(parts[2]), decode_tmux_octal(payload))
+        try:
+            age_ms = int(age)
+        except ValueError:
+            return ControlNotification("%extended-output", line)
+        return ControlExtendedOutput(pane_id, age_ms, decode_tmux_octal(payload))
+    prefix = line.split(" ", 1)[0]
     if prefix == "%exit":
         reason = line[len("%exit") :].strip()
         return ControlExit(reason or None)
     return ControlNotification(prefix, line)
+
+
+def _split_payload(value: str) -> tuple[str | None, str]:
+    head, separator, tail = value.partition(" ")
+    if not head or not separator:
+        return None, ""
+    return head, tail
 
 
 def decode_tmux_octal(value: str) -> bytes:

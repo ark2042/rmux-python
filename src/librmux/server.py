@@ -115,6 +115,11 @@ class Rmux:
                 self._validate_capabilities(self._capabilities)
         return dict(self._capabilities)
 
+    def start_server(self) -> CommandRun:
+        """Ensure the selected rmux daemon is running."""
+
+        return self.cmd("start-server", check=True)
+
     def list_sessions(self) -> list[JsonObject]:
         """Return ``rmux list-sessions --json``."""
 
@@ -333,4 +338,5 @@ class Rmux:
         return env
 
 
+RMUX = Rmux
 Server = Rmux

@@ -1,9 +1,12 @@
 """Python SDK for RMUX."""
 
+__version__ = "0.6.0"
+
 from .builder import RmuxBuilder
 from .handles import Pane, Session, Window
 from .server import (
     CommandRun,
+    RMUX,
     Rmux,
     RmuxCommandError,
     RmuxCompatibilityError,
@@ -44,6 +47,7 @@ __all__ = [
     "PaneSetExpectation",
     "PaneSetOutcome",
     "PaneSnapshot",
+    "RMUX",
     "Rmux",
     "RmuxBuilder",
     "RmuxCommandError",
@@ -56,4 +60,5 @@ __all__ = [
     "RmuxTraceBuilder",
     "TraceSession",
     "Window",
+    "__version__",
 ]

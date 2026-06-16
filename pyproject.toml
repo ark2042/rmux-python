@@ -1,14 +1,15 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "librmux"
-version = "0.1.0"
-description = "Python SDK for RMUX."
+version = "0.6.0"
+description = "Python SDK for RMUX 0.6.0."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT OR Apache-2.0" }
+license = "MIT OR Apache-2.0"
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
 authors = [{ name = "RMUX contributors" }]
 keywords = ["terminal", "multiplexer", "rmux", "sdk"]
 classifiers = [
@@ -16,9 +17,20 @@ classifiers = [
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Software Development :: Libraries",
   "Topic :: Terminals",
+  "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://rmux.io"
+Documentation = "https://rmux.io/docs/examples/#/quickstart"
+Source = "https://github.com/Helvesec/rmux-python"
+Issues = "https://github.com/Helvesec/rmux-python/issues"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

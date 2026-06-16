@@ -1,25 +1,37 @@
 # librmux
 
 `librmux` is the Python SDK for RMUX. Its public handles follow the same
-vocabulary as the Rust SDK: `Rmux`, `Session`, `Window`, and `Pane`.
+vocabulary as the Rust SDK: `RMUX`, `Session`, `Window`, and `Pane`.
+
+[Examples available](https://rmux.io/docs/examples/#/quickstart)
+
+## Installation
+
+```bash
+python -m pip install librmux
+```
+
+`librmux` targets RMUX 0.6.0 and uses the `rmux` executable. Install the RMUX
+binary separately and keep it on `PATH`, or pass a specific binary with
+`RMUX.builder().binary(...)`.
 
 ```python
-from librmux import Rmux
+from librmux import RMUX
 
-rmux = Rmux()
+rmux = RMUX()
 for session in rmux.list_sessions():
     print(session["session_name"])
 ```
 
-`Server` remains available as an alias for existing code.
+`Rmux` and `Server` remain available as aliases for existing code.
 
 ## Endpoint Selection
 
 ```python
-Rmux()                         # default rmux endpoint
-Rmux(socket_path="/tmp/rmux")   # passes -S /tmp/rmux
-Rmux(socket_name="demo")        # passes -L demo
-Rmux.builder().socket_name("demo").connect_or_start()
+RMUX()                         # default rmux endpoint
+RMUX(socket_path="/tmp/rmux")   # passes -S /tmp/rmux
+RMUX(socket_name="demo")        # passes -L demo
+RMUX.builder().socket_name("demo").connect_or_start()
 ```
 
 ## Common Operations
@@ -38,4 +50,15 @@ For raw commands:
 run = rmux.cmd("rename-window", "-t", "demo:0", "logs")
 if run.returncode != 0:
     raise RuntimeError(run.stderr)
+```
+
+## Publishing
+
+This package is released to PyPI as `librmux` from version tags through
+PyPI Trusted Publishing. Configure the PyPI project with workflow
+`.github/workflows/release.yml` and environment `pypi`, then publish with:
+
+```bash
+git tag v0.6.0
+git push origin v0.6.0
 ```

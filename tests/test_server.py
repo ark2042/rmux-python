@@ -10,17 +10,21 @@ from librmux import (
     ControlOutput,
     Pane,
     PaneSet,
+    RMUX,
     Rmux,
     RmuxCommandError,
     RmuxCompatibilityError,
     Server,
+    __version__,
 )
 from librmux.control import decode_tmux_octal, parse_control_line
 
 
 class ServerTests(unittest.TestCase):
-    def test_server_alias_points_to_canonical_rmux_client(self) -> None:
+    def test_legacy_aliases_point_to_canonical_rmux_client(self) -> None:
+        self.assertIs(RMUX, Rmux)
         self.assertIs(Server, Rmux)
+        self.assertEqual(__version__, "0.6.0")
 
     def test_builder_creates_configured_client(self) -> None:
         with fake_rmux() as binary:
@@ -38,6 +42,7 @@ class ServerTests(unittest.TestCase):
 
     def test_connect_or_start_validates_contract_when_enabled(self) -> None:
         responses = {
+            ("start-server",): "",
             ("capabilities", "--json"): {
                 "binary_contract_version": 1,
                 "json_commands": ["list-sessions"],
@@ -49,6 +54,27 @@ class ServerTests(unittest.TestCase):
             capabilities = rmux.capabilities()
 
         self.assertEqual(capabilities["binary_contract_version"], 1)
+
+    def test_connect_or_start_starts_real_rmux_for_empty_socket(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = (
+                Rmux.builder()
+                .binary(binary)
+                .socket_path(socket_path)
+                .check_compatibility(False)
+                .connect_or_start()
+            )
+            try:
+                run = rmux.cmd("list-sessions", "--json")
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(json.loads(run.stdout), [])
 
     def test_cmd_injects_socket_path_and_preserves_exit(self) -> None:
         with fake_rmux() as binary:
@@ -203,12 +229,12 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(match.column, 6)
 
     def test_control_output_parser_decodes_tmux_octal_bytes(self) -> None:
-        event = parse_control_line(r"%output %4 hello\012\134\377")
+        event = parse_control_line(r"%output %4 hello world\012\134\377")
 
         self.assertIsInstance(event, ControlOutput)
         assert isinstance(event, ControlOutput)
         self.assertEqual(event.pane_id, "%4")
-        self.assertEqual(event.data, b"hello\n\\\xff")
+        self.assertEqual(event.data, b"hello world\n\\\xff")
         self.assertEqual(decode_tmux_octal(r"a\000b"), b"a\0b")
 
     def test_snapshot_and_text_locator_helpers(self) -> None:
@@ -291,16 +317,40 @@ class ServerTests(unittest.TestCase):
                 self.assertRegex(pane.id() or "", r"^%[0-9]+$")
 
                 with pane.line_stream() as lines:
-                    pane.send_text("stream-sdk\n")
-                    self.assertEqual(lines.next(timeout=3), "stream-sdk")
+                    pane.send_text("stream sdk with spaces\n")
+                    self.assertEqual(lines.next(timeout=3), "stream sdk with spaces")
 
                 with pane.render_stream() as renders:
-                    pane.send_text("render-sdk\n")
+                    pane.send_text("render sdk with spaces\n")
                     snapshot = renders.next(timeout=3)
             finally:
                 rmux.cmd("kill-server")
 
-        self.assertIn("render-sdk", snapshot.visible_text)
+        self.assertIn("render sdk with spaces", snapshot.visible_text)
+
+    def test_output_stream_preserves_spaces_against_real_rmux(self) -> None:
+        binary = real_rmux_binary()
+        if binary is None:
+            self.skipTest("real rmux binary not available")
+        with tempfile.TemporaryDirectory() as root:
+            socket_path = str(Path(root) / "rmux.sock")
+            rmux = Rmux(
+                binary=binary,
+                socket_path=socket_path,
+                check_compatibility=False,
+            )
+            rmux.cmd("kill-server")
+            try:
+                session = rmux.ensure_session("py_sdk_stream_spaces", shell_command="cat")
+                pane = session.pane(0, 0)
+
+                with pane.output_stream() as output:
+                    pane.send_text("hello world\n")
+                    chunk = output.next(timeout=3)
+            finally:
+                rmux.cmd("kill-server")
+
+        self.assertIn(b"hello world", chunk.data)
 
     def test_wait_for_exit_works_against_real_rmux(self) -> None:
         binary = real_rmux_binary()
@@ -325,6 +375,14 @@ class ServerTests(unittest.TestCase):
 
         self.assertTrue(state.dead)
         self.assertEqual(state.status, 7)
+
+    def test_wait_for_exit_propagates_display_message_failures(self) -> None:
+        with fake_rmux() as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+            pane = Pane(rmux, "%404")
+
+            with self.assertRaises(RmuxCommandError):
+                pane.wait_for_exit(timeout=0)
 
     def test_mutating_handles_work_against_real_rmux(self) -> None:
         binary = real_rmux_binary()
@@ -410,10 +468,17 @@ class ServerTests(unittest.TestCase):
             Rmux: [
                 "builder",
                 "cmd",
+                "start_server",
                 "ensure_session",
                 "pane_set",
                 "broadcast_text",
                 "tracing",
+            ],
+            RMUX: [
+                "builder",
+                "cmd",
+                "start_server",
+                "ensure_session",
             ],
             Pane: [
                 "snapshot",
@@ -451,7 +516,10 @@ class fake_rmux:
         path = Path(self.root.name) / "rmux-fake"
         path.write_text(
             "#!/bin/sh\n"
+            "is_start=0\n"
+            "for arg in \"$@\"; do [ \"$arg\" = start-server ] && is_start=1; done\n"
             "for arg in \"$@\"; do printf '%s\\n' \"$arg\"; done\n"
+            "if [ \"$is_start\" = 1 ]; then exit 0; fi\n"
             "printf 'fake stderr\\n' >&2\n"
             "exit 3\n",
             encoding="utf-8",

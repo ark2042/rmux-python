@@ -409,9 +409,8 @@ class Pane:
             "-t",
             self.target,
             "#{pane_dead}:#{pane_dead_status}",
+            check=True,
         )
-        if run.returncode != 0:
-            return PaneExitState(dead=True, status=None)
         dead, _, status = run.stdout.strip().partition(":")
         if dead not in {"1", "true"}:
             return PaneExitState(dead=False, status=None)

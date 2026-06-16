@@ -56,7 +56,7 @@ class RmuxBuilder:
         return self
 
     def connect_or_start(self):
-        """Build a client and validate the rmux contract when enabled."""
+        """Build a client, start the selected daemon, and validate the contract."""
 
         from .server import Rmux
 
@@ -68,6 +68,7 @@ class RmuxBuilder:
             env=self._env,
             cwd=self._cwd,
         )
+        rmux.start_server()
         if self._check_compatibility:
             rmux.capabilities()
         return rmux
