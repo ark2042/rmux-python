@@ -52,14 +52,3 @@ run = rmux.cmd("rename-window", "-t", "demo:0", "logs")
 if run.returncode != 0:
     raise RuntimeError(run.stderr)
 ```
-
-## Publishing
-
-This package is released to PyPI as `librmux` from version tags through
-PyPI Trusted Publishing. Configure the PyPI project with workflow
-`.github/workflows/release.yml` and environment `pypi`, then publish with:
-
-```bash
-git tag v0.6.0
-git push origin v0.6.0
-```
