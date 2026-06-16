@@ -1,7 +1,8 @@
 # librmux
 
-`librmux` is the Python SDK for RMUX. Its public handles follow the same
-vocabulary as the Rust SDK: `RMUX`, `Session`, `Window`, and `Pane`.
+`librmux` is the Python SDK for [RMUX](https://github.com/Helvesec/rmux).
+Its public handles follow the same vocabulary as the Rust SDK: `RMUX`,
+`Session`, `Window`, and `Pane`.
 
 [Examples available](https://rmux.io/docs/examples/#/quickstart)
 
