@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .expectations import (
@@ -19,8 +20,6 @@ from .snapshots import PaneSnapshot
 from .streams import PaneLineStream, PaneOutputStream, PaneRenderStream
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from .server import CommandRun, JsonObject, Rmux
 
 
@@ -71,7 +70,7 @@ class Session:
         name: str | None = None,
         detached: bool = True,
         shell_command: str | None = None,
-        start_directory: "str | Path | None" = None,
+        start_directory: str | Path | None = None,
     ) -> "Window":
         """Create a new window in this session.
 
