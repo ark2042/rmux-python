@@ -19,6 +19,8 @@ from .snapshots import PaneSnapshot
 from .streams import PaneLineStream, PaneOutputStream, PaneRenderStream
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .server import CommandRun, JsonObject, Rmux
 
 
@@ -69,14 +71,21 @@ class Session:
         name: str | None = None,
         detached: bool = True,
         shell_command: str | None = None,
+        start_directory: "str | Path | None" = None,
     ) -> "Window":
-        """Create a new window in this session."""
+        """Create a new window in this session.
+
+        ``start_directory`` sets the working directory of the new window's pane
+        (``new-window -c <dir>``).
+        """
 
         args: list[object] = ["new-window", "-P", "-F", "#{window_index}", "-t", self.name]
         if detached:
             args.append("-d")
         if name is not None:
             args.extend(["-n", name])
+        if start_directory is not None:
+            args.extend(["-c", str(start_directory)])
         if shell_command is not None:
             args.append(shell_command)
         run = self.server.cmd(*args, check=True)

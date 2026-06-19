@@ -145,8 +145,14 @@ class Rmux:
         *,
         detached: bool = True,
         shell_command: str | None = None,
+        start_directory: str | Path | None = None,
     ) -> Session:
-        """Return an existing session or create it."""
+        """Return an existing session or create it.
+
+        ``start_directory`` sets the working directory of the session's first
+        pane (``new-session -c <dir>``). It is distinct from the ``cwd`` of the
+        ``rmux`` client process configured on the builder.
+        """
 
         run = self.cmd("has-session", "-t", name)
         if run.returncode != 0:
@@ -154,6 +160,8 @@ class Rmux:
             if detached:
                 args.append("-d")
             args.extend(["-s", name])
+            if start_directory is not None:
+                args.extend(["-c", str(start_directory)])
             if shell_command is not None:
                 args.append(shell_command)
             self.cmd(*args, check=True)

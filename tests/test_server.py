@@ -210,6 +210,41 @@ class ServerTests(unittest.TestCase):
 
         self.assertEqual(session.name, "demo")
 
+    def test_ensure_session_passes_start_directory(self) -> None:
+        # has-session is absent from the responses -> fake exits non-zero ->
+        # the creation path runs and must emit ``new-session -c <dir>``.
+        responses = {
+            ("new-session", "-d", "-s", "demo", "-c", "/work/dir"): "",
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+
+            session = rmux.ensure_session("demo", start_directory="/work/dir")
+
+        self.assertEqual(session.name, "demo")
+
+    def test_new_window_passes_start_directory(self) -> None:
+        # ``start_directory`` accepts a Path and is coerced to ``-c <dir>``.
+        responses = {
+            (
+                "new-window",
+                "-P",
+                "-F",
+                "#{window_index}",
+                "-t",
+                "demo",
+                "-d",
+                "-c",
+                "/work/dir",
+            ): "2",
+        }
+        with fake_rmux_json(responses) as binary:
+            rmux = Rmux(binary=binary, check_compatibility=False)
+
+            window = rmux.session("demo").new_window(start_directory=Path("/work/dir"))
+
+        self.assertEqual(window.index, 2)
+
     def test_pane_text_helpers_use_literal_send_and_capture_polling(self) -> None:
         responses = {
             ("send-keys", "-t", "%4", "-l", "hello\n"): "",
